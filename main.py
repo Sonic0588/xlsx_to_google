@@ -3,7 +3,7 @@ import os
 
 from openpyxl import load_workbook
 from dotenv import load_dotenv
-from gspread import Cell, Client, service_account, Spreadsheet
+from gspread import Client, service_account, Spreadsheet
 
 load_dotenv()
 
@@ -63,8 +63,24 @@ def main(worksheet_name: str, goal_actions_columns: list[str] | None = None) -> 
             key_to_column[header] = column_letter
     
     # Определяем, с какой строки начинать запись (последняя заполненная строка + 1)
+    # Игнорируем столбцы A (индекс 0) и L (индекс 11), так как там формулы
+    start_row = 2
     all_values = worksheet.get_all_values()
-    start_row = len(all_values) + 1 if all_values else 2
+
+    if all_values:
+        # Ищем последнюю строку с данными, исключая столбцы A и L
+        last_row_with_data = 1  # Начинаем с заголовка
+        for row_idx, row in enumerate(all_values[1:], start=2):  # Пропускаем заголовок (строка 1)
+            # Проверяем, есть ли данные в столбцах кроме A (индекс 0) и L (индекс 11)
+            has_data = False
+            for col_idx, cell_value in enumerate(row):
+                if col_idx not in [0, 11]:  # Игнорируем столбцы A и L
+                    if cell_value and str(cell_value).strip():
+                        has_data = True
+                        break
+            if has_data:
+                last_row_with_data = row_idx
+        start_row = last_row_with_data + 1
     
     # Собираем только новые данные из файлов
     new_data = []
@@ -133,6 +149,20 @@ def main(worksheet_name: str, goal_actions_columns: list[str] | None = None) -> 
         # Выполняем все обновления батчем
         if updates:
             worksheet.batch_update(updates)
+            
+            # Форматируем колонки G и J (bounceRate и robotPercentage) как проценты
+            percentage_columns = ["bounceRate", "robotPercentage"]
+            for key in percentage_columns:
+                if key in key_to_column:
+                    column_letter = key_to_column[key]
+                    # Форматируем диапазон от start_row до последней строки с данными
+                    format_range = f"{column_letter}{start_row}:{column_letter}{start_row + len(new_data) - 1}"
+                    worksheet.format(format_range, {
+                        "numberFormat": {
+                            "type": "PERCENT",
+                            "pattern": "0.00%"
+                        }
+                    })
 
 
 
